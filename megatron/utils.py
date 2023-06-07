@@ -15,6 +15,10 @@ from megatron import (
     get_adlr_autoresume,
 )
 from megatron.core import mpu
+from megatron.core.parallel_state import (
+    get_data_parallel_rank,
+    get_tensor_model_parallel_rank,
+)
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
 from megatron.model.module import param_is_not_shared
 
@@ -197,6 +201,15 @@ def print_rank_0(message):
     if torch.distributed.is_initialized():
         if torch.distributed.get_rank() == 0:
             print(message, flush=True)
+    else:
+        print(message, flush=True)
+
+def print_rank_2D(message):
+    """If distributed is initialized, print only on rank 0."""
+    if torch.distributed.is_initialized():
+        tp_rank = get_tensor_model_parallel_rank()
+        dp_rank = get_data_parallel_rank()
+        print(f"tp:{tp_rank},dp:{dp_rank}:" + message, flush=True)
     else:
         print(message, flush=True)
 
