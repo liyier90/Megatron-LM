@@ -11,6 +11,7 @@ import warnings
 import torch
 import torch.nn.functional as F
 import torch.nn.init as init
+import torch_xla.core.xla_model as xm
 from torch.nn.parameter import Parameter
 
 from torch.cuda.amp import custom_fwd, custom_bwd
@@ -42,6 +43,8 @@ try:
     import fused_weight_gradient_mlp_cuda
 except ImportError:
     _grad_accum_fusion_available = False
+
+torch.cuda.current_device = lambda: xm.xla_device()
 
 _MODEL_PARALLEL_ATTRIBUTE_DEFAULTS = {'tensor_model_parallel': False,
                                       'partition_dim': -1,
@@ -192,21 +195,30 @@ class VocabParallelEmbedding(torch.nn.Module):
     def forward(self, input_):
         if self.tensor_model_parallel_size > 1:
             # Build the mask.
-            input_mask = (input_ < self.vocab_start_index) | \
-                         (input_ >= self.vocab_end_index)
+            # input_mask = (input_ < self.vocab_start_index) | \
+            #              (input_ >= self.vocab_end_index)
+            # XLA friendly
+            input_mask = (input_ >= self.vocab_start_index) & \
+                         (input_ < self.vocab_end_index)
             # Mask the input.
             masked_input = input_.clone() - self.vocab_start_index
-            masked_input[input_mask] = 0
+            # masked_input[input_mask] = 0
+            # XLA friendly
+            masked_input = torch.mul(masked_input, input_mask.long())
         else:
             masked_input = input_
-            # Get the embeddings.
-        output_parallel = F.embedding(masked_input, self.weight,
+        # Get the embeddings.
+        output_parallel = F.embedding(masked_input.long(), self.weight,
                                       self.padding_idx, self.max_norm,
                                       self.norm_type, self.scale_grad_by_freq,
                                       self.sparse)
         # Mask the output embedding.
         if self.tensor_model_parallel_size > 1:
-            output_parallel[input_mask, :] = 0.0
+            # output_parallel[input_mask, :] = 0.0
+            # XLA friendly
+            output_parallel = torch.mul(output_parallel,
+                                        torch.unsqueeze(input_mask.float(),
+                                                        dim=-1))
         # Reduce across all the model parallel GPUs.
         output = reduce_from_tensor_model_parallel_region(output_parallel)
         return output
@@ -273,9 +285,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         if ctx.sequence_parallel:
             handle.wait()
 
-        # Doing gather + slicing during the NeMo forward pass can make this tensor 
-        # not be contiguous. PyTorch only checks if the tensor is contiguous, and only 
-        # clones it if it's not contiguous: 
+        # Doing gather + slicing during the NeMo forward pass can make this tensor
+        # not be contiguous. PyTorch only checks if the tensor is contiguous, and only
+        # clones it if it's not contiguous:
         # https://github.com/pytorch/pytorch/blob/c47cf9bc7f9e02f649ab4ed53fe4d35732c92ab6/torch/_refs/__init__.py#L2761
         grad_output = grad_output.contiguous()
         # Convert the tensor shapes to 2D for execution compatibility
@@ -286,8 +298,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.async_grad_allreduce:
             # Asynchronous all-reduce
-            handle = torch.distributed.all_reduce(
-                    grad_input, group=get_tensor_model_parallel_group(), async_op=True)
+            torch.distributed.all_reduce(
+                    grad_input, group=get_tensor_model_parallel_group(),
+                    async_op=True)
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # all-reduce is scheduled before the weight gradient computation
 
@@ -298,9 +311,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                                          device=torch.cuda.current_device(),
                                          requires_grad=False)
             # reduce_scatter
-            handle = torch.distributed._reduce_scatter_base(sub_grad_input, grad_input,
-                                                            group=get_tensor_model_parallel_group(),
-                                                            async_op=True)
+            torch.distributed._reduce_scatter_base(
+                    sub_grad_input, grad_input,
+                    group=get_tensor_model_parallel_group(), async_op=True)
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # reduce scatter is scheduled before the weight gradient computation
 
@@ -318,11 +331,11 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
-            handle.wait()
+            # handle.wait()
             return sub_grad_input, grad_weight, grad_bias, None, None, None
 
-        if ctx.async_grad_allreduce:
-            handle.wait()
+        # if ctx.async_grad_allreduce:
+        #     handle.wait()
 
         return grad_input, grad_weight, grad_bias, None, None, None
 

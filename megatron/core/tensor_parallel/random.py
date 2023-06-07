@@ -24,43 +24,47 @@ from .utils import (
 
 from megatron.core.utils import safely_set_viewless_tensor_data
 
+torch.cuda.manual_seed = lambda s: torch.manual_seed(s)
+torch.cuda.get_rng_state = lambda: torch.get_rng_state()
+
 # Default name for the model parallel rng tracker.
 _MODEL_PARALLEL_RNG_TRACKER_NAME = 'model-parallel-rng'
 
 
+# def _set_cuda_rng_state(new_state, device=-1):
+#     """Sets the random number generator state of the current GPU.
+#
+#     Argumentss:
+#         new_state (torch.ByteTensor): The desired state
+#     This function is adapted from PyTorch repo (torch.cuda.set_rng_state)
+#     with a single change: the input state is not cloned. Cloning caused
+#     major performance issues for +4 GPU cases.
+#     """
+#     if hasattr(_C, '_cuda_setRNGState') and callable(_C._cuda_setRNGState):
+#         # older PyTorch
+#         def cb():
+#             with device_ctx_manager(device):
+#                 _C._cuda_setRNGState(new_state)
+#     else:
+#         # newer PyTorch
+#         if device == -1:
+#             device = torch.device('cuda')
+#         elif isinstance(device, str):
+#             device = torch.device(device)
+#         elif isinstance(device, int):
+#             device = torch.device('cuda', device)
+#
+#         def cb():
+#             idx = device.index
+#             if idx is None:
+#                 idx = torch.cuda.current_device()
+#             default_generator = torch.cuda.default_generators[idx]
+#             default_generator.set_state(new_state)
+#
+#     _lazy_call(cb)
+
 def _set_cuda_rng_state(new_state, device=-1):
-    """Sets the random number generator state of the current GPU.
-
-    Argumentss:
-        new_state (torch.ByteTensor): The desired state
-    This function is adapted from PyTorch repo (torch.cuda.set_rng_state)
-    with a single change: the input state is not cloned. Cloning caused
-    major performance issues for +4 GPU cases.
-    """
-    if hasattr(_C, '_cuda_setRNGState') and callable(_C._cuda_setRNGState):
-        # older PyTorch
-        def cb():
-            with device_ctx_manager(device):
-                _C._cuda_setRNGState(new_state)
-    else:
-        # newer PyTorch
-        if device == -1:
-            device = torch.device('cuda')
-        elif isinstance(device, str):
-            device = torch.device(device)
-        elif isinstance(device, int):
-            device = torch.device('cuda', device)
-
-        def cb():
-            idx = device.index
-            if idx is None:
-                idx = torch.cuda.current_device()
-            default_generator = torch.cuda.default_generators[idx]
-            default_generator.set_state(new_state)
-
-    _lazy_call(cb)
-
-
+    torch.set_rng_state(new_state)
 
 class CudaRNGStatesTracker:
     """Tracker for the cuda RNG states.
