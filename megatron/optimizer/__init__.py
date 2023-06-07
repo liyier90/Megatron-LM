@@ -1,7 +1,9 @@
 # Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 
-from apex.optimizers import FusedAdam as Adam
-from apex.optimizers import FusedSGD as SGD
+# from apex.optimizers import FusedAdam as Adam
+# from apex.optimizers import FusedSGD as SGD
+from torch.optim import AdamW as Adam
+from torch.optim import SGD
 
 from megatron import get_args
 
@@ -17,7 +19,7 @@ def get_param_groups(modules,
     """creates param groups based on weight decay condition (regularized vs non regularized)
        and learning rate scale condition (args.lr vs lr_mult * args.lr)
        scale_lr_cond is used during finetuning where head of the network requires a scaled
-       version of the base learning rate. 
+       version of the base learning rate.
     """
     wd_no_scale_lr = []
     wd_scale_lr = []

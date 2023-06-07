@@ -4,9 +4,10 @@
 
 from abc import ABC
 from abc import abstractmethod
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
+# from apex.multi_tensor_apply import multi_tensor_applier
+# import amp_C
 import torch
+import torch_xla.core.xla_model as xm
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
 
@@ -19,6 +20,9 @@ from megatron.model.module import param_is_not_shared
 from megatron.utils import unwrap_model
 
 from .clip_grads import clip_grad_norm_fp32, count_zeros_fp32
+
+torch.cuda.FloatTensor = lambda t: torch.FloatTensor(t).to(xm.xla_device())
+torch.cuda.IntTensor = lambda t: torch.IntTensor(t).to(xm.xla_device())
 
 
 def _zero_grad_group_helper(group, set_to_none):
@@ -41,16 +45,18 @@ def _multi_tensor_copy_this_to_that(this, that, overflow_buf=None):
     We don't have a blfoat16 implementation so for now if the overflow_buf
     is not provided, we default back to simple loop copy to be compatible
     with bfloat16."""
-    if overflow_buf:
-        overflow_buf.fill_(0)
-        # Scaling with factor `1.0` is equivalent to copy.
-        multi_tensor_applier(amp_C.multi_tensor_scale,
-                             overflow_buf,
-                             [this, that],
-                             1.0)
-    else:
-        for this_, that_ in zip(this, that):
-            that_.copy_(this_)
+    # if overflow_buf:
+    #     overflow_buf.fill_(0)
+    #     # Scaling with factor `1.0` is equivalent to copy.
+    #     multi_tensor_applier(amp_C.multi_tensor_scale,
+    #                          overflow_buf,
+    #                          [this, that],
+    #                          1.0)
+    # else:
+    #     for this_, that_ in zip(this, that):
+    #         that_.copy_(this_)
+    for this_, that_ in zip(this, that):
+        that_.copy_(this_)
 
 
 
@@ -262,7 +268,7 @@ class MegatronOptimizer(ABC):
                 args.sequence_parallel:
             grads = []
             for model_module in self.models:
-                unwrapped_model = unwrap_model( 
+                unwrapped_model = unwrap_model(
                     model_module, (torchDDP, LocalDDP, Float16Module))
                 for param in unwrapped_model.parameters():
                     if getattr(param, 'sequence_parallel', False):
@@ -522,8 +528,10 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
                 if param.requires_grad:
 
                     # float16 params:
-                    if param.type() in ['torch.cuda.HalfTensor',
-                                        'torch.cuda.BFloat16Tensor']:
+                    # if param.type() in ['torch.cuda.HalfTensor',
+                    #                     'torch.cuda.BFloat16Tensor']:
+                    if param.type() in ['torch.HalfTensor',
+                                        'torch.BFloat16Tensor']:
                         float16_params_this_group.append(param)
                         # Create a copy
                         main_param = param.detach().clone().float()
@@ -541,7 +549,8 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
                             self.optimizer.state[main_param] \
                                 = self.optimizer.state.pop(param)
                     # fp32 params.
-                    elif param.type() == 'torch.cuda.FloatTensor':
+                    # elif param.type() == 'torch.cuda.FloatTensor':
+                    elif param.type() == 'torch.FloatTensor':
                         fp32_params_this_group.append(param)
                         param_group['params'][i] = param
 
@@ -587,7 +596,7 @@ class Float16OptimizerWithFloat16Params(MixedPrecisionOptimizer):
             for main_param in main_group:
                 if main_param.grad is not None:
                     main_grads.append(main_param.grad.data)
-        
+
         return main_grads
 
 
