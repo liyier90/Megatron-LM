@@ -8,6 +8,8 @@ import time
 
 import numpy as np
 import torch
+import torch_xla.distributed.xla_backend  # for XLA backend
+import torch_xla.core.xla_model as xm
 from datetime import timedelta
 
 from megatron import fused_kernels
@@ -21,15 +23,19 @@ from megatron.global_vars import set_global_variables
 from megatron.model.transformer import bias_dropout_add_fused_train
 from megatron.model.fused_bias_gelu import bias_gelu
 
+# TODO(getting global worldsize, change to local, assuming TP only for now)
+torch.cuda.device_count = lambda: xm.xrt_world_size()
+torch.cuda.set_device = lambda x: None
+
 
 def initialize_megatron(extra_args_provider=None, args_defaults={},
                         ignore_unknown_args=False, allow_no_cuda=False):
     """Set global variables, initialize distributed, and
     set autoresume and random seeds.
-    `allow_no_cuda` should not be set unless using megatron for cpu only 
-    data processing. In general this arg should not be set unless you know 
+    `allow_no_cuda` should not be set unless using megatron for cpu only
+    data processing. In general this arg should not be set unless you know
     what you are doing.
-    Returns a function to finalize distributed env initialization 
+    Returns a function to finalize distributed env initialization
     (optionally, only when args.lazy_mpu_init == True)
     """
     if not allow_no_cuda:
@@ -44,7 +50,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
         load_args_from_checkpoint(args)
 
     validate_args(args, args_defaults)
-        
+
     # set global args, build tokenizer, and set adlr-autoresume,
     # tensorboard-writer, and timers.
     set_global_variables(args)
@@ -54,7 +60,7 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
         args = get_args()
         # Pytorch distributed.
         _initialize_distributed()
-        
+
         # Random seeds for reproducibility.
         if args.rank == 0:
             print('> setting random seeds to {} ...'.format(args.seed))
@@ -79,7 +85,8 @@ def initialize_megatron(extra_args_provider=None, args_defaults={},
         _init_autoresume()
 
         # Compile dependencies.
-        _compile_dependencies()
+        # Commenting out any CUDA compile dependencies
+        # _compile_dependencies()
 
         # No continuation function
         return None
@@ -122,7 +129,7 @@ def _compile_dependencies():
             print('WARNING: constraints for invoking optimized'
                   ' fused softmax kernel are not met. We default'
                   ' back to unfused kernel invocations.', flush=True)
-    
+
     # Always build on rank zero first.
     if torch.distributed.get_rank() == 0:
         start_time = time.time()
