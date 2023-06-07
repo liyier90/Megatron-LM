@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 import torch
+import torch_xla.core.xla_model as xm
 
 from megatron import print_rank_0
 from megatron.core import mpu
@@ -439,6 +440,10 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             np.save(idx_path['shuffle'], shuffle_idx, allow_pickle=True)
             print_rank_0(' > elasped time to build and save shuffle-idx mapping'
                          ' (seconds): {:4f}'.format(time.time() - start_time))
+            # Sync to give time for rank=0 to finish building shuffle-idx
+            # mapping files
+            xm.rendezvous('shuffle_idx_mapping')
+
         except OSError:
             print(f'There was an error trying to create the data cache directory ({data_cache_dir})')
             print('or a file in it. This defaults to a directory "index-cache" within the directory')
@@ -447,14 +452,15 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             print('write access to.')
             data_cache_success = False
 
-    counts = torch.cuda.LongTensor([data_cache_success])
-    torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
-    torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
-    if counts[0].item() != (
-        torch.distributed.get_world_size() //
-        torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group())):
-        print_rank_0("Data index creation unsuccessful, exiting.")
-        exit()
+    # TODO(Uncomment later once dataset generation is streamlined)
+    # counts = torch.cuda.LongTensor([data_cache_success])
+    # torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
+    # torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
+    # if counts[0].item() != (
+    #     torch.distributed.get_world_size() //
+    #     torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group())):
+    #     print_rank_0("Data index creation unsuccessful, exiting.")
+    #     exit()
 
     # Load mappings.
     start_time = time.time()
