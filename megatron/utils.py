@@ -5,10 +5,11 @@
 import sys
 
 import torch
+import torch_xla.core.xla_model as xm
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
-from apex.multi_tensor_apply import multi_tensor_applier
-import amp_C
+# from apex.multi_tensor_apply import multi_tensor_applier
+# import amp_C
 
 from megatron import (
     get_args,
@@ -55,18 +56,23 @@ def calc_params_l2_norm(model):
                 else:
                     params_data.append(param.data)
     # Calculate norm
-    dummy_overflow_buf = torch.cuda.IntTensor([0])
-    norm, _ = multi_tensor_applier(
-        amp_C.multi_tensor_l2norm,
-        dummy_overflow_buf,
-        [params_data],
-        False # no per-parameter norm
-    )
-    norm_2 = norm * norm
+    # dummy_overflow_buf = torch.cuda.IntTensor([0])
+    # norm, _ = multi_tensor_applier(
+    #     amp_C.multi_tensor_l2norm,
+    #     dummy_overflow_buf,
+    #     [params_data],
+    #     False # no per-parameter norm
+    # )
+    # norm_2 = norm * norm
+    norm_2 = torch.tensor([0.0]).to(xm.xla_device())
+    for p in params_data:
+        norm = torch.norm(p, 2.0)
+        norm_2 += norm ** 2.0
     # Sum across all model-parallel GPUs.
     torch.distributed.all_reduce(norm_2,
                                  op=torch.distributed.ReduceOp.SUM,
-                                 group=mpu.get_model_parallel_group())
+                                 group=mpu.get_model_parallel_group(),
+                                 async_op=True)
     return norm_2.item() ** 0.5
 
 
@@ -75,7 +81,8 @@ def average_losses_across_data_parallel_group(losses):
     averaged_losses = torch.cat(
         [loss.clone().detach().view(1) for loss in losses])
     torch.distributed.all_reduce(averaged_losses,
-                                 group=mpu.get_data_parallel_group())
+                                 group=mpu.get_data_parallel_group(),
+                                 async_op=True)
     averaged_losses = averaged_losses / \
         torch.distributed.get_world_size(group=mpu.get_data_parallel_group())
 
@@ -151,17 +158,21 @@ def get_ltor_masks_and_position_ids(data,
         att_mask_batch = micro_batch_size
     else:
         att_mask_batch = 1
-    attention_mask = torch.tril(torch.ones(
-        (att_mask_batch, seq_length, seq_length), device=data.device)).view(
-            att_mask_batch, 1, seq_length, seq_length)
+    # attention_mask = torch.tril(torch.ones(
+    #     (att_mask_batch, seq_length, seq_length), device=data.device)).view(
+    #         att_mask_batch, 1, seq_length, seq_length)
+    # XLA friendly, replace with triu, removing boolean check end
+    attention_mask = torch.triu(
+        torch.ones((att_mask_batch, seq_length, seq_length), device=data.device),
+        diagonal=1).view(att_mask_batch, 1, seq_length, seq_length).bool()
 
     # Loss mask.
     loss_mask = torch.ones(data.size(), dtype=torch.float, device=data.device)
     if eod_mask_loss:
         loss_mask[data == eod_token] = 0.0
 
-    # Position ids.
-    position_ids = torch.arange(seq_length, dtype=torch.long,
+    # Position ids. (XLA) changing from long to int
+    position_ids = torch.arange(seq_length, dtype=torch.int,
                                 device=data.device)
     position_ids = position_ids.unsqueeze(0).expand_as(data)
     # We need to clone as the ids will be modifed based on batch index.
@@ -190,8 +201,9 @@ def get_ltor_masks_and_position_ids(data,
                     position_ids[b, (i + 1):] -= (i + 1 - prev_index)
                     prev_index = i + 1
 
+    # Don't need this after converting the mask above to triu
     # Convert attention mask to binary:
-    attention_mask = (attention_mask < 0.5)
+    # attention_mask = (attention_mask < 0.5)
 
     return attention_mask, loss_mask, position_ids
 
