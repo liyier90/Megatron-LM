@@ -6,6 +6,7 @@ import math
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch_xla.core.xla_model as xm
 from typing import Optional
 
 from megatron import get_timers, get_args, get_retro_args, core, get_num_microbatches
@@ -28,6 +29,8 @@ try:
     from flash_attn.flash_attn_interface import flash_attn_unpadded_func
 except ImportError:
     flash_attn_unpadded_func = None
+
+torch.cuda.current_device = lambda: xm.xla_device()
 
 
 """ We use the following notation throughout this file:

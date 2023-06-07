@@ -182,7 +182,7 @@ class Embedding(MegatronModule):
         else:
             self.tokentype_embeddings = None
 
-        self.fp32_residual_connection = args.fp32_residual_connection 
+        self.fp32_residual_connection = args.fp32_residual_connection
         self.sequence_parallel = args.sequence_parallel
         # Embeddings dropout
         self.embedding_dropout = torch.nn.Dropout(embedding_dropout_prob)
@@ -219,7 +219,9 @@ class Embedding(MegatronModule):
         # Embeddings.
         words_embeddings = self.word_embeddings(input_ids)
         if self.add_position_embedding:
-            position_embeddings = self.position_embeddings(position_ids)
+            # position_embeddings = self.position_embeddings(position_ids)
+            # Original: 32 bit
+            position_embeddings = self.position_embeddings(position_ids.long())
             embeddings = words_embeddings + position_embeddings
         else:
             embeddings = words_embeddings
