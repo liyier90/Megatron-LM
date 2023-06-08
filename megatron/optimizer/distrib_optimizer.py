@@ -3,9 +3,10 @@
 """Megatron distributed optimizer."""
 
 
-from apex.optimizers import FusedAdam as Adam
+# from apex.optimizers import FusedAdam as Adam
 import math
 import torch
+from torch.optim import AdamW as Adam
 
 from megatron import get_args
 from megatron import get_timers
@@ -386,7 +387,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         self.model_param_group_index_map, self.opt_group_ranges = \
             self.build_optimizer_group_ranges(self.optimizer.param_groups,
                                               self.model_gbuf_ranges)
-        
+
         # Allocate main param shards.
         (
             self.model_float16_groups,
@@ -630,7 +631,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 # Gather contiguous shards on DP rank 0.
                 world_tensors = {}
                 for key, send_tensor in local_shards.items():
-                    
+
                     # Gather tensor list.
                     if data_parallel_rank == 0:
                         recv_tensors = [torch.empty((gbuf_local_numel,),
@@ -700,7 +701,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
                 # Scatter local shards from DP rank 0.
                 for key, recv_tensor in local_shards.items():
-                    
+
                     # Scatter tensor list.
                     if data_parallel_rank == 0:
                         world_tensor = loaded_state[model_idx][dtype][key]

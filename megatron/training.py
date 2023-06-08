@@ -359,7 +359,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
                      for model_module in model]
 
         elif args.DDP_impl == 'local':
-            print(f'accum grads in fp32:{args.accmulate_allreduce_grads_in_fp32}, '
+            print(f'accum grads in fp32:{args.accumulate_allreduce_grads_in_fp32}, '
                   f'use_contiguous_buffers:{args.use_contiguous_buffers_in_local_ddp}.')
             model = [LocalDDP(model_module,
                               args.accumulate_allreduce_grads_in_fp32,
@@ -760,7 +760,7 @@ def training_markstep_closure(loss_dict, total_loss_dict, learning_rate,
                 step_0start = iteration - 1
                 if step_0start < len(golden_loss) and step_0start >= 0:
                     np.testing.assert_allclose(avg,
-                                               float(golden_loss[step_0start]), 
+                                               float(golden_loss[step_0start]),
                                                rtol=2e-1)
         if grad_norm is not None:
             log_string += ' grad norm: {:.3f} |'.format(grad_norm)
@@ -1126,7 +1126,7 @@ def build_train_valid_test_data_loaders(
     # args.do_valid = flags[1].item()
     # args.do_test = flags[2].item()
 
-    return train_dataloader, valid_dataloader, test_dataloader
+    return train_device_dataloader, valid_device_dataloader, test_device_dataloader
 
 
 def build_train_valid_test_data_iterators(
@@ -1135,7 +1135,7 @@ def build_train_valid_test_data_iterators(
     args = get_args()
 
     # Build loaders.
-    train_dataloader, valid_dataloader, test_dataloader = \
+    train_device_dataloader, valid_device_dataloader, test_device_dataloader = \
         build_train_valid_test_data_loaders(
             build_train_valid_test_datasets_provider)
 
@@ -1143,30 +1143,30 @@ def build_train_valid_test_data_iterators(
     dl_type = args.dataloader_type
     assert dl_type in ['single', 'cyclic']
 
-    if train_dataloader is not None:
+    if train_device_dataloader is not None:
         # train_data_iterator = iter(train_dataloader) if dl_type == 'single' \
         #                       else iter(cyclic_iter(train_dataloader))
-        train_device_data_iterator = (iter(train_device_data_iterator)
+        train_device_data_iterator = (iter(train_device_dataloader)
                                       if dl_type == 'single'
                                       else iter(cyclic_iter(train_device_dataloader)))
     else:
         # train_data_iterator = None
         train_device_data_iterator = None
 
-    if valid_dataloader is not None:
+    if valid_device_dataloader is not None:
         # valid_data_iterator = iter(valid_dataloader) if dl_type == 'single' \
         #                       else iter(cyclic_iter(valid_dataloader))
-        valid_device_data_iterator = (iter(valid_device_data_iterator)
+        valid_device_data_iterator = (iter(valid_device_dataloader)
                                       if dl_type == 'single'
                                       else iter(cyclic_iter(valid_device_dataloader)))
     else:
         # valid_data_iterator = None
         valid_device_data_iterator = None
 
-    if test_dataloader is not None:
+    if test_device_dataloader is not None:
         # test_data_iterator = iter(test_dataloader) if dl_type == 'single' \
         #                      else iter(cyclic_iter(test_dataloader))
-        test_device_data_iterator = (iter(test_device_data_iterator)
+        test_device_data_iterator = (iter(test_device_dataloader)
                                      if dl_type == 'single'
                                      else iter(cyclic_iter(test_device_dataloader)))
     else:

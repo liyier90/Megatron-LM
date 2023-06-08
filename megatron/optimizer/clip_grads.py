@@ -114,7 +114,7 @@ def clip_grad_norm_fp32(parameters, grads_for_norm,
     for g in grads:
         g.data.mul_(torch.where(clip_coeff < 1,
                                 clip_coeff,
-                                torch.tensor(1.0, device=xm_xla_device())))
+                                torch.tensor(1.0, device=xm.xla_device())))
 
     return total_norm
 

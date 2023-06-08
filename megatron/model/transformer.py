@@ -738,10 +738,7 @@ class ParallelTransformerLayer(MegatronModule):
         # Layernorm on the input data.
         self.input_layernorm = LayerNorm(
             args.hidden_size,
-            eps=args.layernorm_epsilon,
-            no_persist_layer_norm=args.no_persist_layer_norm,
-            sequence_parallel=args.sequence_parallel,
-            apply_layernorm_1p=args.apply_layernorm_1p)
+            eps=args.layernorm_epsilon)
 
         # Self attention.
         self.self_attention = ParallelAttention(
@@ -757,10 +754,7 @@ class ParallelTransformerLayer(MegatronModule):
         # Layernorm on the attention output
         self.post_attention_layernorm = LayerNorm(
             args.hidden_size,
-            eps=args.layernorm_epsilon,
-            no_persist_layer_norm=args.no_persist_layer_norm,
-            sequence_parallel=args.sequence_parallel,
-            apply_layernorm_1p=args.apply_layernorm_1p)
+            eps=args.layernorm_epsilon)
 
         # Cross attention.
         if self.layer_type in (LayerType.decoder,
@@ -775,10 +769,7 @@ class ParallelTransformerLayer(MegatronModule):
             # Layernorm on the attention output.
             self.post_inter_attention_layernorm = LayerNorm(
                 args.hidden_size,
-                eps=args.layernorm_epsilon,
-                no_persist_layer_norm=args.no_persist_layer_norm,
-                sequence_parallel=args.sequence_parallel,
-                apply_layernorm_1p=args.apply_layernorm_1p)
+                eps=args.layernorm_epsilon)
 
         # MLP
         if args.num_experts is not None:
@@ -1445,10 +1436,7 @@ class ParallelTransformer(MegatronModule):
             # Final layer norm before output.
             self.final_layernorm = LayerNorm(
                 args.hidden_size,
-                eps=args.layernorm_epsilon,
-                no_persist_layer_norm=args.no_persist_layer_norm,
-                sequence_parallel=args.sequence_parallel,
-                apply_layernorm_1p=args.apply_layernorm_1p)
+                eps=args.layernorm_epsilon)
 
     def _get_layer(self, layer_number):
         return self.layers[layer_number]
