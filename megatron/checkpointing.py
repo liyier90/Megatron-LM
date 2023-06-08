@@ -20,6 +20,15 @@ from .utils import (unwrap_model,
 
 
 _CHECKPOINT_VERSION = None
+_ARGS_TO_SAVE = {
+    'num_layers',
+    'hidden_size',
+    'num_attention_heads',
+    'tensor_model_parallel_size',
+    'consumed_train_samples',
+    'consumed_valid_samples',
+    'pipeline_model_parallel_size',
+}
 
 class Checkpoint:
     def __init__(self, checkpoint_list=[]):
@@ -269,14 +278,15 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     # Only rank zero of the data parallel writes to the disk.
     model = unwrap_model(model)
 
+    # Checkpoint name
+    chkpt_path = args.save if args.save is not None else args.save_xser
+    checkpoint_name = get_checkpoint_name(chkpt_path, iteration)
+
     print_rank_0('saving checkpoint at iteration {:7d} to {}'.format(
-        iteration, args.save))
+        iteration, checkpoint_name))
 
     # Collect rng state across data parallel ranks.
     rng_state = get_rng_state()
-
-    # Checkpoint name.
-    checkpoint_name = get_checkpoint_name(args.save, iteration)
 
     # Save distributed optimizer's custom parameter state.
     if args.use_distributed_optimizer:
@@ -288,7 +298,19 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     # Collect args, model, RNG.
     # Arguments, iteration, and model.
     state_dict = {}
-    state_dict['args'] = args
+
+    args_dict = vars(args)
+    # Saving only necessary arg
+    # TODO(Debug Checkpointing generating extra hlos)
+    for arg in _ARGS_TO_SAVE:
+        state_dict[arg] = args_dict[arg]
+    if args.vocab_file:
+        state_dict['max_position_embeddings'] = args_dict['max_position_embeddings']
+        state_dict['make_vocab_size_divisible_by'] = \
+            args_dict['make_vocab_size_divisible_by']
+        state_dict['padded_vocab_size'] = args_dict['padded_vocab_size']
+        state_dict['tokenizer_type'] = args_dict['tokenizer_type']
+
     state_dict['checkpoint_version'] = 3.0
     state_dict['iteration'] = iteration
     if len(model) == 1:
@@ -312,8 +334,6 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
         state_dict["rng_state"] = rng_state
 
     # Save.
-    chkpt_path = args.save if args.save is not None else args.save_xser
-    checkpoint_name = get_checkpoint_name(chkpt_path, iteration)
     master_only = mpu.get_data_parallel_rank() == 0
     if master_only:
         print_rank_2D(f'checkpoint_name:{checkpoint_name}')

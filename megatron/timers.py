@@ -262,30 +262,44 @@ class Timers:
         return output_string
 
 
-    def log(self, names, rank=None, normalizer=1.0, reset=True, barrier=False):
+    def log(self, names, rank=None, normalizer=1.0, reset=True, barrier=False,
+            stats=None):
         """Log a group of timers."""
 
         # Print.
         assert normalizer > 0.0
-        if self._log_option in ['max', 'minmax']:
-            max_only = False
-            if self._log_option == 'max':
-                max_only = True
-            output_string = self._get_global_min_max_time_string(
-                names, reset, barrier, normalizer/1000.0, max_only)
-        elif self._log_option == 'all':
-            output_string = self._get_all_ranks_time_string(names,
-                                                            reset, barrier,
-                                                            normalizer/1000.0)
+        string = 'time (ms)'
+        for name in names:
+            elapsed_time = self._timers[name].elapsed(
+                reset=reset) * 1000.0 / normalizer
+            string += ' | {}: {:.2f}'.format(name, elapsed_time)
+            if stats != None:
+                stats[name].append(elapsed_time)
+        if torch.distributed.is_initialized():
+            if torch.distributed.get_rank() == (
+                    torch.distributed.get_world_size() - 1):
+                print(string, flush=True)
         else:
-            raise Exception('unknown timing log option {}'.format(
-                self._log_option))
+            print(string, flush=True)
+        # if self._log_option in ['max', 'minmax']:
+        #     max_only = False
+        #     if self._log_option == 'max':
+        #         max_only = True
+        #     output_string = self._get_global_min_max_time_string(
+        #         names, reset, barrier, normalizer/1000.0, max_only)
+        # elif self._log_option == 'all':
+        #     output_string = self._get_all_ranks_time_string(names,
+        #                                                     reset, barrier,
+        #                                                     normalizer/1000.0)
+        # else:
+        #     raise Exception('unknown timing log option {}'.format(
+        #         self._log_option))
 
-        # If no input rank is provided, log on last rank.
-        if rank is None:
-            rank = torch.distributed.get_world_size() - 1
-        if rank == torch.distributed.get_rank() and output_string is not None:
-            print(output_string, flush=True)
+        # # If no input rank is provided, log on last rank.
+        # if rank is None:
+        #     rank = torch.distributed.get_world_size() - 1
+        # if rank == torch.distributed.get_rank() and output_string is not None:
+        #     print(output_string, flush=True)
 
 
     def write(self, names, writer, iteration, normalizer=1.0,
