@@ -21,13 +21,16 @@ from .utils import (unwrap_model,
 
 _CHECKPOINT_VERSION = None
 _ARGS_TO_SAVE = {
-    'num_layers',
+    'ffn_hidden_size',
     'hidden_size',
     'num_attention_heads',
+    'num_layers',
+    'pipeline_model_parallel_size',
     'tensor_model_parallel_size',
     'consumed_train_samples',
     'consumed_valid_samples',
-    'pipeline_model_parallel_size',
+    'bias_gelu_fusion',
+    'openai_gelu',
 }
 
 class Checkpoint:
