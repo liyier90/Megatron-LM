@@ -169,7 +169,7 @@ def initialize_model_parallel(
         for j in range(tensor_model_parallel_size):
             ranks = range(start_rank + j, end_rank, tensor_model_parallel_size)
             all_data_parallel_group_ranks.append(list(ranks))
-            group = torch.distributed.new_group(ranks, pg_options=pg_options))
+            group = torch.distributed.new_group(ranks, pg_options=pg_options)
             group_gloo = torch.distributed.new_group(ranks, backend="gloo")
             if rank in ranks:
                 _DATA_PARALLEL_GROUP = group
@@ -206,7 +206,15 @@ def initialize_model_parallel(
     global _EMBEDDING_GROUP
     global _EMBEDDING_GLOBAL_RANKS
     assert _EMBEDDING_GROUP is None, 'embedding group is already initialized'
+
+    # Initialize global memory buffer
+    # This isn't really "parallel state" but there isn't another good place to
+    # put this. If we end up with a more generic initialization of megatron-core
+    # we could stick it there
+    _set_global_memory_buffer()
+
     return   # TODO(Make embedding groups in future)
+
     global _POSITION_EMBEDDING_GROUP
     global _POSITION_EMBEDDING_GLOBAL_RANKS
     assert _POSITION_EMBEDDING_GROUP is None, \
@@ -260,12 +268,6 @@ def initialize_model_parallel(
             group = torch.distributed.new_group(ranks)
             if rank in ranks:
                 _AMAX_REDUCTION_GROUP = group
-
-    # Initialize global memory buffer
-    # This isn't really "parallel state" but there isn't another good place to
-    # put this. If we end up with a more generic initialization of megatron-core
-    # we could stick it there
-    _set_global_memory_buffer()
 
 
 def is_unitialized():
@@ -454,6 +456,8 @@ def is_rank_in_embedding_group(ignore_virtual=False):
 
 def is_rank_in_position_embedding_group():
     """Return true if current rank is in position embedding group, False otherwise."""
+    # TODO(Remove once pipelining works)
+    return False
     rank = torch.distributed.get_rank()
     global _POSITION_EMBEDDING_GLOBAL_RANKS
     return rank in _POSITION_EMBEDDING_GLOBAL_RANKS
