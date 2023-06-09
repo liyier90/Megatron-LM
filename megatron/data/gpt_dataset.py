@@ -440,10 +440,6 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             np.save(idx_path['shuffle'], shuffle_idx, allow_pickle=True)
             print_rank_0(' > elasped time to build and save shuffle-idx mapping'
                          ' (seconds): {:4f}'.format(time.time() - start_time))
-            # Sync to give time for rank=0 to finish building shuffle-idx
-            # mapping files
-            xm.rendezvous('shuffle_idx_mapping')
-
         except OSError:
             print(f'There was an error trying to create the data cache directory ({data_cache_dir})')
             print('or a file in it. This defaults to a directory "index-cache" within the directory')
@@ -451,6 +447,9 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             print('ensure you have write access to this directory or specify one that you do have')
             print('write access to.')
             data_cache_success = False
+    # Sync to give time for rank=0 to finish building shuffle-idx
+    # mapping files
+    xm.rendezvous('shuffle_idx_mapping')
 
     # TODO(Uncomment later once dataset generation is streamlined)
     # counts = torch.cuda.LongTensor([data_cache_success])
