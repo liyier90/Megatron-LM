@@ -441,6 +441,7 @@ def _load_base_checkpoint(load_dir, rank0=False):
 
     If rank0 is true, just loads rank 0 checkpoint, ignoring arguments.
     """
+    args = get_args()
 
     # Read the tracker file and set the iteration.
     tracker_filename = get_checkpoint_tracker_filename(load_dir)
