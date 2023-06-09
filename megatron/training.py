@@ -144,7 +144,7 @@ def pretrain(train_valid_test_dataset_provider,
     # _TRAIN_START_TIME = start_time_tensor.item()
     # print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
     #     time.time() - _TRAIN_START_TIME))
-    # print_datetime('after megatron is initialized')
+    print_datetime('after megatron is initialized')
 
     args = get_args()
     # timers = get_timers()
@@ -164,8 +164,8 @@ def pretrain(train_valid_test_dataset_provider,
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
         model_provider, model_type)
     # timers('model-and-optimizer-setup').stop()
-    # print_datetime('after model, optimizer, and learning rate '
-    #                'scheduler are built')
+    print_datetime('after model, optimizer, and learning rate '
+                   'scheduler are built')
 
     # Data stuff.
     # timers('train/valid/test-data-iterators-setup', log_level=0).start(
@@ -442,15 +442,16 @@ def setup_model_and_optimizer(model_provider_func,
     opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
 
     if (args.load or args.load_xser) \
-            and os.environ.get('NEURON_EXTRACT_GRAPHS_ONLY', None) is not None:
+            and not os.environ.get('NEURON_EXTRACT_GRAPHS_ONLY', None):
         load_arg = 'load' if args.load else 'load_xser'
         timers = get_timers()
         timers('load-checkpoint', log_level=0).start()
         # Staggering load checkpoints
-        for i in range(mpu.get_tensor_model_parallel_world_size()):
+        for i in range(0, mpu.get_tensor_model_parallel_world_size()):
             if mpu.get_tensor_model_parallel_rank() == i:
                 args.iteration = load_checkpoint(model, optimizer,
-                                                 opt_param_scheduler)
+                                                 opt_param_scheduler,
+                                                 load_arg=load_arg)
                 print_rank_2D(f'Finished Loading Phase-{i}')
             xm.rendezvous(f'load-chkpt-phase-{i}')
         timers('load-checkpoint').stop()
@@ -1101,9 +1102,15 @@ def build_train_valid_test_data_loaders(
             valid_ds, args.consumed_valid_samples)
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
-        train_device_dataloader = pl.MpDeviceLoader(train_dataloader, device)
-        valid_device_dataloader = pl.MpDeviceLoader(valid_dataloader, device)
-        test_device_dataloader = pl.MpDeviceLoader(test_dataloader, device)
+        train_device_dataloader = (pl.MpDeviceLoader(train_dataloader, device)
+                                   if train_dataloader is not None
+                                   else None)
+        valid_device_dataloader = (pl.MpDeviceLoader(valid_dataloader, device)
+                                   if valid_dataloader is not None
+                                   else None)
+        test_device_dataloader = (pl.MpDeviceLoader(test_dataloader, device)
+                                  if test_dataloader is not None
+                                  else None)
 
         # Flags to know if we need to do training/validation/testing.
         do_train = train_dataloader is not None and args.train_iters > 0
